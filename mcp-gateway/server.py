@@ -17,11 +17,14 @@
 import anyio
 import click
 import httpx
+import subprocess
+from jinja2 import Template
 
 import mcp.types as types
 from mcp.server.lowlevel import Server
 
-from loader import load_config
+from .loader import load_config
+
 
 async def forward_tool_call(
     method: str, url: str,
@@ -33,6 +36,36 @@ async def forward_tool_call(
         response = await client.request(method, url)
         response.raise_for_status()
         return [types.TextContent(type="text", text=response.text)]
+
+
+async def execute_command_tool(
+    command: str, args_template: str, arguments: dict, config: dict,
+) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
+    template = Template(args_template)
+    rendered_args = template.render(args=arguments, config=config.get("server", {}).get("config", {}))
+
+    cmd = [command]
+
+    if rendered_args.strip():
+        args_list = [arg.strip() for arg in rendered_args.strip().split('\n') if arg.strip()]
+        cmd.extend(args_list)
+
+    print(f"执行命令: {' '.join(cmd)}")
+
+    process = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        timeout=30
+    )
+
+    if process.returncode == 0:
+        result_text = f"Command executed successfully:\n{' '.join(cmd)}\n\nOutput:\n{process.stdout}"
+    else:
+        result_text = f"Command failed:\n{' '.join(cmd)}\n\nError:\n{process.stderr}\nReturn code: {process.returncode}"
+
+    return [types.TextContent(type="text", text=result_text)]
+
 
 @click.command()
 @click.option("--port", default=3001, help="Port to listen on for SSE")
@@ -79,14 +112,23 @@ def main(port: int, transport: str, api_key: str, baseurl: str) -> int:
         tool = tools_map[name]
         if "requestTemplate" not in tool:
             raise ValueError(f"Tool {name} does not have a requestTemplate")
-        url = tool["requestTemplate"]["url"]
-        for k, v in arguments.items():
-            url = url.replace("{{.args." + k + "}}", v)
-        for k, v in config["server"]["config"].items():
-            url = url.replace("{{.config." + k + "}}", v)
-        #return [types.TextContent(type="text", text=url)]
 
-        return await forward_tool_call(tool["requestTemplate"]["method"], url)
+        request_template = tool["requestTemplate"]
+
+        if "command" in request_template:
+            command = request_template["command"]
+            args_template = request_template.get("args", "")
+
+            return await execute_command_tool(command, args_template, arguments, config)
+        elif "url" in request_template:
+            url = request_template["url"]
+            for k, v in arguments.items():
+                url = url.replace("{{.args." + k + "}}", v)
+            for k, v in config["server"]["config"].items():
+                url = url.replace("{{.config." + k + "}}", v)
+            # return [types.TextContent(type="text", text=url)]
+
+            return await forward_tool_call(request_template["method"], url)
 
         # if name == "get_entity_state":
         #     if "entity_id" not in arguments:
