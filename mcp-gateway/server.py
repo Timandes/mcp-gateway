@@ -13,6 +13,7 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 """
+import os
 
 import anyio
 import click
@@ -109,7 +110,7 @@ def main(port: int, transport: str, api_key: str, baseurl: str) -> int:
         from starlette.applications import Starlette
         from starlette.routing import Mount, Route
 
-        sse = SseServerTransport("/messages/")
+        sse = SseServerTransport(os.getenv("MESSAGE_PATH","/messages/"))
 
         async def handle_sse(request):
             async with sse.connect_sse(
@@ -123,7 +124,7 @@ def main(port: int, transport: str, api_key: str, baseurl: str) -> int:
             debug=True,
             routes=[
                 Route("/sse", endpoint=handle_sse),
-                Mount("/messages/", app=sse.handle_post_message),
+                Mount(os.getenv("MESSAGE_PATH","/messages/"), app=sse.handle_post_message),
             ],
         )
 
