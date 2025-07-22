@@ -159,7 +159,7 @@ def main(port: int, transport: str, api_key: str, baseurl: str) -> int:
         from starlette.applications import Starlette
         from starlette.routing import Mount, Route
 
-        sse = SseServerTransport("/messages/")
+        sse = SseServerTransport("/messages")
 
         async def handle_sse(request):
             async with sse.connect_sse(
@@ -173,7 +173,7 @@ def main(port: int, transport: str, api_key: str, baseurl: str) -> int:
             debug=True,
             routes=[
                 Route("/sse", endpoint=handle_sse),
-                Mount("/messages/", app=sse.handle_post_message),
+                Mount("/messages", app=sse.handle_post_message),
             ],
         )
 
