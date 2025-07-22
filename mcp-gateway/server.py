@@ -26,7 +26,7 @@ from jinja2 import Template
 import mcp.types as types
 from mcp.server.lowlevel import Server
 
-from .loader import load_config
+from loader import load_config
 
 
 async def forward_tool_call(
